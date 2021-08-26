@@ -98,6 +98,59 @@ func handleErr(res *ocmerrors.Error, err error) error {
 	return errors.New(msg)
 }
 
+func handleAddOnErr(res *ocmerrors.Error, err error) error {
+	msg := res.Reason()
+	if msg == "" {
+		msg = err.Error()
+	}
+	var detailsMsg string
+	details, hasDetails := res.GetDetails()
+	if hasDetails {
+		// get error interface
+		errorIface, ok := details.([]interface{})
+		if !ok {
+			detailsMsg = fmt.Sprintf("cannot parse error details : want type []interface{};  got %T", details)
+		}
+		// drill down to addon error interface of map[string]interface{}
+		for _, e := range errorIface {
+			addonErrorIface, ok := e.(map[string]interface{})
+			if !ok {
+				detailsMsg = fmt.Sprintf("cannot parse error details : want type map[string]interface{};  got %T", errorIface)
+			}
+			// get error items from interface
+			if addonErrorIface["kind"] == "AddOnResourceRequirementStatus" {
+				fmt.Println("found resource status")
+				items := addonErrorIface["items"]
+				fmt.Println("the items ", items)
+				addonErrorItems, ok := items.(map[string]string)
+				if !ok {
+					detailsMsg = fmt.Sprintf("cannot parse error details : want type map[string]string;  got %T", details)
+				}
+				for errorKey, errorValue := range addonErrorItems {
+					fmt.Println(errorKey ," = ", errorValue)
+				}
+			}
+		}
+		msg = fmt.Sprintf("%v : %s", msg, detailsMsg)
+		fmt.Println("the message ", msg)
+
+		//b, ok := errorFace[0].(map[string]interface{})
+		//if !ok {
+		//	return fmt.Errorf("want type map[string]interface{};  got %T", m)
+		//}
+		//for k, v := range b {
+		//	fmt.Println(k, "=>", v)
+		//}
+	}
+	// Hack to always display the correct terms and conditions message
+	if res.Code() == "CLUSTERS-MGMT-451" {
+		msg = "You must accept the Terms and Conditions in order to continue.\n" +
+			"Go to https://www.redhat.com/wapps/tnc/ackrequired?site=ocm&event=register\n" +
+			"Once you accept the terms, you will need to retry the action that was blocked."
+	}
+	return err
+}
+
 func (c *Client) GetDefaultClusterFlavors(flavour string) (dMachinecidr *net.IPNet, dPodcidr *net.IPNet,
 	dServicecidr *net.IPNet, dhostPrefix int) {
 	flavourGetResponse, err := c.ocm.ClustersMgmt().V1().Flavours().Flavour(flavour).Get().Send()

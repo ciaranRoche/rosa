@@ -72,7 +72,7 @@ func (c *Client) InstallAddOn(clusterKey string, creator *aws.Creator, addOnID s
 		Body(addOnInstallation).
 		Send()
 	if err != nil {
-		return handleErr(response.Error(), err)
+		return handleAddOnErr(response.Error(), err)
 	}
 
 	return nil

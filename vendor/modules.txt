@@ -166,7 +166,7 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
-# github.com/openshift-online/ocm-sdk-go v0.1.199
+# github.com/openshift-online/ocm-sdk-go v0.1.203
 ## explicit
 github.com/openshift-online/ocm-sdk-go
 github.com/openshift-online/ocm-sdk-go/accountsmgmt
@@ -184,6 +184,7 @@ github.com/openshift-online/ocm-sdk-go/jobqueue
 github.com/openshift-online/ocm-sdk-go/jobqueue/v1
 github.com/openshift-online/ocm-sdk-go/logging
 github.com/openshift-online/ocm-sdk-go/metrics
+github.com/openshift-online/ocm-sdk-go/retry
 github.com/openshift-online/ocm-sdk-go/servicelogs
 github.com/openshift-online/ocm-sdk-go/servicelogs/v1
 # github.com/pkg/errors v0.9.1
