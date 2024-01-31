@@ -60,7 +60,7 @@ func init() {
 	Cmd.AddCommand(tuningconfigs.Cmd)
 	Cmd.AddCommand(dnsdomains.Cmd)
 	Cmd.AddCommand(autoscaler.Cmd)
-	Cmd.AddCommand(kubeletconfig.Cmd)
+	Cmd.AddCommand(kubeletconfig.NewCreateKubeletConfig())
 
 	flags := Cmd.PersistentFlags()
 	arguments.AddProfileFlag(flags)
