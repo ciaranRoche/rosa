@@ -7,9 +7,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
+	"github.com/spf13/cobra"
 
+	"github.com/openshift/rosa/pkg/interactive"
 	ocmOutput "github.com/openshift/rosa/pkg/ocm/output"
 	"github.com/openshift/rosa/pkg/output"
+	"github.com/openshift/rosa/pkg/rosa"
 )
 
 var policyBuilder cmv1.NodePoolUpgradePolicyBuilder
@@ -92,6 +95,49 @@ var _ = Describe("Machinepool and nodepool", func() {
 			fmt.Println(out)
 			Expect(fmt.Sprint(out)).To(Equal(fmt.Sprint(expectedOutput)))
 		})
+		It("should return an error if both `subnet` and `availability-zone` flags are set", func() {
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("availability-zone", true, "")
+			cmd.Flags().Bool("subnet", true, "")
+
+			clusterKey := "test-cluster-key"
+			clusterBuilder := cmv1.NewCluster().ID("test").State(cmv1.ClusterStateReady)
+			cluster, err := clusterBuilder.Build()
+			Expect(err).ToNot(HaveOccurred())
+			r := &rosa.Runtime{}
+			args := CreateMachinepoolUserOptions{}
+
+			cmd.Flags().Set("availability-zone", "true")
+			cmd.Flags().Set("subnet", "true")
+
+			machinePool := &machinePool{}
+			err = machinePool.CreateNodePools(r, cmd, clusterKey, cluster, &args)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("Setting both `subnet` and " +
+				"`availability-zone` flag is not supported. Please select `subnet` " +
+				"or `availability-zone` to create a single availability zone machine pool"))
+		})
+		It("should fail name validation", func() {
+			cmd := &cobra.Command{}
+			r := &rosa.Runtime{}
+			args := CreateMachinepoolUserOptions{}
+			machinePool := &machinePool{}
+
+			clusterKey := "test-cluster-key"
+			clusterBuilder := cmv1.NewCluster().ID("test").State(cmv1.ClusterStateReady)
+			cluster, err := clusterBuilder.Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			cmd.Flags().StringVar(&args.Name, "name", "", "Name of the machine pool")
+			invalidName := "0909+===..3"
+			cmd.Flags().Set("name", invalidName)
+
+			err = machinePool.CreateNodePools(r, cmd, clusterKey, cluster, &args)
+			Expect(err).To(HaveOccurred())
+
+			Expect(err.Error()).To(Equal("Expected a valid name for the machine pool"))
+		})
 	})
 	Context("MachinePools", func() {
 		It("Test printMachinePools", func() {
@@ -127,6 +173,180 @@ var _ = Describe("Machinepool and nodepool", func() {
 			Expect(MachinePoolKeyRE.MatchString("#1machinepool")).To(BeFalse())
 			Expect(MachinePoolKeyRE.MatchString("m123123123123123123123123123")).To(BeTrue())
 			Expect(MachinePoolKeyRE.MatchString("m#123")).To(BeFalse())
+		})
+		It("Tests getMachinePoolAvailabilityZones", func() {
+			r := &rosa.Runtime{}
+			var expectedAZs []string
+			clusterBuilder := cmv1.NewCluster().ID("test").State(cmv1.ClusterStateReady).
+				MultiAZ(true).Nodes(cmv1.NewClusterNodes().
+				AvailabilityZones("us-east-1a", "us-east-1b"))
+			cluster, err := clusterBuilder.Build()
+			Expect(err).ToNot(HaveOccurred())
+			isMultiAZ := cluster.MultiAZ()
+			Expect(isMultiAZ).To(Equal(true))
+
+			multiAZMachinePool := false
+			availabilityZoneUserInput := "us-east-1a"
+			subnetUserInput := ""
+
+			azs, err := getMachinePoolAvailabilityZones(r, cluster,
+				multiAZMachinePool, availabilityZoneUserInput, subnetUserInput)
+			Expect(err).ToNot(HaveOccurred())
+
+			expectedAZs = append(expectedAZs, "us-east-1a")
+			Expect(azs).To(Equal(expectedAZs))
+
+			multiAZMachinePool = true
+			expectedAZs = append(expectedAZs, "us-east-1b")
+			azs, err = getMachinePoolAvailabilityZones(r, cluster,
+				multiAZMachinePool, availabilityZoneUserInput, subnetUserInput)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(azs).To(Equal(expectedAZs))
+		})
+	})
+})
+
+var _ = Describe("MachinePools", func() {
+	Context("AddMachinePool validation errors", func() {
+		var (
+			cmd        *cobra.Command
+			clusterKey string
+			r          *rosa.Runtime
+			args       CreateMachinepoolUserOptions
+			cluster    *cmv1.Cluster
+			err        error
+		)
+
+		JustBeforeEach(func() {
+			cmd = &cobra.Command{}
+			r = &rosa.Runtime{}
+			args = CreateMachinepoolUserOptions{}
+			clusterKey = "test-cluster-key"
+			clusterBuilder := cmv1.NewCluster().ID("test").State(cmv1.ClusterStateReady)
+			cluster, err = clusterBuilder.Build()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should error when 'multi-availability-zone' flag is set for non-multi-AZ clusters", func() {
+			machinePool := &machinePool{}
+			cmd.Flags().Bool("multi-availability-zone", true, "")
+			cmd.Flags().Set("multi-availability-zone", "true")
+			err = machinePool.CreateMachinePool(r, cmd, clusterKey, cluster, &args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("Setting the `multi-availability-zone` flag is only allowed for multi-AZ clusters"))
+		})
+
+		It("should error when 'availability-zone' flag is set for non-multi-AZ clusters", func() {
+			machinePool := &machinePool{}
+			// cmd.Flags().StringVar(&args.AvailabilityZone, "availability-zone", "", "")
+			cmd.Flags().Set("availability-zone", "az")
+			err = machinePool.CreateMachinePool(r, cmd, clusterKey, cluster, &args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("Setting the `availability-zone` flag is only allowed for multi-AZ clusters"))
+		})
+
+		It("should error when 'subnet' flag is set for non-BYOVPC clusters", func() {
+			machinePool := &machinePool{}
+			cmd.Flags().StringVar(&args.Subnet, "subnet", "", "")
+			cmd.Flags().Set("subnet", "test-subnet")
+			err = machinePool.CreateMachinePool(r, cmd, clusterKey, cluster, &args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("Setting the `subnet` flag is only allowed for BYO VPC clusters"))
+		})
+	})
+})
+
+var _ = Describe("Utility Functions", func() {
+	Describe("Split function", func() {
+		It("should return true for '=' rune", func() {
+			Expect(Split('=')).To(BeTrue())
+		})
+
+		It("should return true for ':' rune", func() {
+			Expect(Split(':')).To(BeTrue())
+		})
+
+		It("should return false for any other rune", func() {
+			Expect(Split('a')).To(BeFalse())
+		})
+	})
+
+	Describe("minReplicaValidator function", func() {
+		var validator interactive.Validator
+
+		BeforeEach(func() {
+			validator = minReplicaValidator(true) // or false for non-multiAZ
+		})
+
+		It("should return error for non-integer input", func() {
+			err := validator("non-integer")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return error for negative input", func() {
+			err := validator(-1)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return error if not multiple of 3 for multiAZ", func() {
+			err := validator(2)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should not return error for valid input", func() {
+			err := validator(3)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("maxReplicaValidator function", func() {
+		var validator interactive.Validator
+
+		BeforeEach(func() {
+			validator = maxReplicaValidator(1, true)
+		})
+
+		It("should return error for non-integer input", func() {
+			err := validator("non-integer")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return error if maxReplicas less than minReplicas", func() {
+			err := validator(0)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return error if not multiple of 3 for multiAZ", func() {
+			err := validator(5)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should not return error for valid input", func() {
+			err := validator(3)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("spotMaxPriceValidator function", func() {
+		It("should return nil for 'on-demand'", func() {
+			err := spotMaxPriceValidator("on-demand")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should return error for non-numeric input", func() {
+			err := spotMaxPriceValidator("not-a-number")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return error for negative price", func() {
+			err := spotMaxPriceValidator("-1")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should not return error for positive price", func() {
+			err := spotMaxPriceValidator("0.01")
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
