@@ -2,6 +2,17 @@ package machinepool
 
 import (
 	"fmt"
+	aws2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	sdk "github.com/openshift-online/ocm-sdk-go"
+	"github.com/openshift-online/ocm-sdk-go/logging"
+	"github.com/openshift-online/ocm-sdk-go/testing"
+	"github.com/openshift/rosa/pkg/aws"
+	"github.com/openshift/rosa/pkg/ocm"
+	mpOpts "github.com/openshift/rosa/pkg/options/machinepool"
+	"github.com/openshift/rosa/pkg/test"
+	"go.uber.org/mock/gomock"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +25,102 @@ import (
 	"github.com/openshift/rosa/pkg/output"
 	"github.com/openshift/rosa/pkg/rosa"
 )
+
+var _ = FDescribe("Create Machine Pool", func() {
+	var ctrl *gomock.Controller
+	var cmd *cobra.Command
+	var opts *mpOpts.CreateMachinepoolUserOptions
+	var awsMock *aws.MockClient
+	var t *test.TestingRuntime
+
+	Context("Machine Pools", func() {
+		BeforeEach(func() {
+			ctrl = gomock.NewController(GinkgoT())
+			cmd, opts = mpOpts.BuildMachinePoolCreateCommandWithOptions()
+
+			t = test.NewTestRuntime()
+			t.SsoServer = testing.MakeTCPServer()
+			t.ApiServer = testing.MakeTCPServer()
+			t.ApiServer.SetAllowUnhandledRequests(true)
+			t.ApiServer.SetUnhandledRequestStatusCode(http.StatusInternalServerError)
+
+			claims := testing.MakeClaims()
+			claims["username"] = "foo"
+			accessTokenObj := testing.MakeTokenObject(claims)
+			accessToken := accessTokenObj.Raw
+
+			logger, err := logging.NewGoLoggerBuilder().
+				Debug(true).
+				Build()
+			Expect(err).To(BeNil())
+
+			connection, err := sdk.NewConnectionBuilder().
+				Logger(logger).
+				Tokens(accessToken).
+				URL(t.ApiServer.URL()).
+				Build()
+			Expect(err).To(BeNil())
+
+			ocmClient := ocm.NewClientWithConnection(connection)
+			ocm.SetClusterKey("cluster1")
+			t.RosaRuntime = rosa.NewRuntime()
+			t.RosaRuntime.OCMClient = ocmClient
+			t.RosaRuntime.Creator = &aws.Creator{
+				ARN:       "fake",
+				AccountID: "123",
+				IsSTS:     false,
+			}
+			awsMock = aws.NewMockClient(ctrl)
+			t.RosaRuntime.AWSClient = awsMock
+		})
+
+		When("something is passed", func() {
+			It("should do this", func() {
+				t.ApiServer.AppendHandlers(testing.RespondWithJSON(http.StatusOK, ""))
+				t.ApiServer.AppendHandlers(testing.RespondWithJSON(http.StatusOK, ""))
+				t.ApiServer.AppendHandlers(testing.RespondWithJSON(http.StatusOK, ""))
+
+				mockSubnets := []types.Subnet{
+					{
+						SubnetId:         aws2.String("subnet-0b761d44d3d9a4663"),
+						AvailabilityZone: aws2.String("noop"),
+					},
+					{
+						SubnetId:         aws2.String("subnet-0f87f640e56934cbc"),
+						AvailabilityZone: aws2.String("noop"),
+					},
+				}
+				mockAccessKey := &aws.AccessKey{
+					AccessKeyID:     "noop",
+					SecretAccessKey: "noop",
+				}
+
+				awsMock.EXPECT().GetVPCPrivateSubnets(gomock.Any()).Return(mockSubnets, nil).Times(1)
+				awsMock.EXPECT().GetSubnetAvailabilityZone(gomock.Any()).Return("noop", nil).Times(1)
+				awsMock.EXPECT().GetAWSAccessKeys().Return(mockAccessKey, nil).Times(1)
+
+				mockClassicClusterReady := test.MockCluster(func(c *cmv1.ClusterBuilder) {
+					c.AWS(cmv1.NewAWS().SubnetIDs("subnet-0b761d44d3d9a4663", "subnet-0f87f640e56934cbc"))
+					c.Region(cmv1.NewCloudRegion().ID("us-east-1"))
+					c.State(cmv1.ClusterStateReady)
+					c.Hypershift(cmv1.NewHypershift().Enabled(false))
+					c.Nodes(cmv1.NewClusterNodes().AvailabilityZones("noop"))
+				})
+
+				opts.Name = "noop"
+				opts.Subnet = "subnet-0b761d44d3d9a4663"
+				opts.Replicas = 2
+
+				err := cmd.Flags().Set("replicas", "2")
+				Expect(err).To(BeNil())
+
+				service := NewMachinePoolService()
+				err = service.CreateNodePools(t.RosaRuntime, cmd, "noop", mockClassicClusterReady, opts)
+				Expect(err).To(BeNil())
+			})
+		})
+	})
+})
 
 var policyBuilder cmv1.NodePoolUpgradePolicyBuilder
 var date time.Time
@@ -105,7 +212,7 @@ var _ = Describe("Machinepool and nodepool", func() {
 			cluster, err := clusterBuilder.Build()
 			Expect(err).ToNot(HaveOccurred())
 			r := &rosa.Runtime{}
-			args := CreateMachinepoolUserOptions{}
+			args := mpOpts.CreateMachinepoolUserOptions{}
 
 			cmd.Flags().Set("availability-zone", "true")
 			cmd.Flags().Set("subnet", "true")
@@ -121,7 +228,7 @@ var _ = Describe("Machinepool and nodepool", func() {
 		It("should fail name validation", func() {
 			cmd := &cobra.Command{}
 			r := &rosa.Runtime{}
-			args := CreateMachinepoolUserOptions{}
+			args := mpOpts.CreateMachinepoolUserOptions{}
 			machinePool := &machinePool{}
 
 			clusterKey := "test-cluster-key"
@@ -213,7 +320,7 @@ var _ = Describe("MachinePools", func() {
 			cmd        *cobra.Command
 			clusterKey string
 			r          *rosa.Runtime
-			args       CreateMachinepoolUserOptions
+			args       mpOpts.CreateMachinepoolUserOptions
 			cluster    *cmv1.Cluster
 			err        error
 		)
@@ -221,7 +328,7 @@ var _ = Describe("MachinePools", func() {
 		JustBeforeEach(func() {
 			cmd = &cobra.Command{}
 			r = &rosa.Runtime{}
-			args = CreateMachinepoolUserOptions{}
+			args = mpOpts.CreateMachinepoolUserOptions{}
 			clusterKey = "test-cluster-key"
 			clusterBuilder := cmv1.NewCluster().ID("test").State(cmv1.ClusterStateReady)
 			cluster, err = clusterBuilder.Build()

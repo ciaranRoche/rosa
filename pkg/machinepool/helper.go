@@ -2,6 +2,7 @@ package machinepool
 
 import (
 	"fmt"
+	mpOpts "github.com/openshift/rosa/pkg/options/machinepool"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -15,7 +16,7 @@ import (
 )
 
 func getSubnetFromUser(cmd *cobra.Command, r *rosa.Runtime, isSubnetSet bool,
-	cluster *cmv1.Cluster, args *CreateMachinepoolUserOptions) (string, error) {
+	cluster *cmv1.Cluster, args *mpOpts.CreateMachinepoolUserOptions) (string, error) {
 	var selectSubnet bool
 	var subnet string
 	var err error

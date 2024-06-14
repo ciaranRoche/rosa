@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	mpOpts "github.com/openshift/rosa/pkg/options/machinepool"
 	"os"
 	"regexp"
 	"strconv"
@@ -38,37 +39,13 @@ var notFoundMessage string = "Machine pool '%s' not found"
 // user is safe and that it there is no risk of SQL injection:
 var machinePoolKeyRE = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
 
-type CreateMachinepoolUserOptions struct {
-	Name                  string
-	InstanceType          string
-	Replicas              int
-	AutoscalingEnabled    bool
-	MinReplicas           int
-	MaxReplicas           int
-	Labels                string
-	Taints                string
-	UseSpotInstances      bool
-	SpotMaxPrice          string
-	MultiAvailabilityZone bool
-	AvailabilityZone      string
-	Subnet                string
-	Version               string
-	Autorepair            bool
-	TuningConfigs         string
-	KubeletConfigs        string
-	RootDiskSize          string
-	SecurityGroupIds      []string
-	NodeDrainGracePeriod  string
-	Tags                  []string
-}
-
 //go:generate mockgen -source=machinepool.go -package=machinepool -destination=machinepool_mock.go
 type MachinePoolService interface {
 	DescribeMachinePool(r *rosa.Runtime, cluster *cmv1.Cluster, clusterKey string, machinePoolId string) error
 	ListMachinePools(r *rosa.Runtime, clusterKey string, cluster *cmv1.Cluster) error
 	DeleteMachinePool(r *rosa.Runtime, machinePoolId string, clusterKey string, cluster *cmv1.Cluster) error
-	CreateMachinePool(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster, options *CreateMachinepoolUserOptions) error
-	CreateNodePools(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster, options *CreateMachinepoolUserOptions) error
+	CreateMachinePool(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster, options *mpOpts.CreateMachinepoolUserOptions) error
+	CreateNodePools(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster, options *mpOpts.CreateMachinepoolUserOptions) error
 }
 
 type machinePool struct {
@@ -81,7 +58,7 @@ func NewMachinePoolService() MachinePoolService {
 }
 
 func (m *machinePool) CreateMachinePool(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster,
-	args *CreateMachinepoolUserOptions) error {
+	args *mpOpts.CreateMachinepoolUserOptions) error {
 
 	// Validate flags that are only allowed for multi-AZ clusters
 	isMultiAvailabilityZoneSet := cmd.Flags().Changed("multi-availability-zone")
@@ -650,7 +627,7 @@ func spotMaxPriceValidator(val interface{}) error {
 }
 
 func (m *machinePool) CreateNodePools(r *rosa.Runtime, cmd *cobra.Command, clusterKey string, cluster *cmv1.Cluster,
-	args *CreateMachinepoolUserOptions) error {
+	args *mpOpts.CreateMachinepoolUserOptions) error {
 
 	var err error
 	isAvailabilityZoneSet := cmd.Flags().Changed("availability-zone")
@@ -1093,7 +1070,7 @@ func (m *machinePool) CreateNodePools(r *rosa.Runtime, cmd *cobra.Command, clust
 }
 
 func getSubnetFromAvailabilityZone(cmd *cobra.Command, r *rosa.Runtime, isAvailabilityZoneSet bool,
-	cluster *cmv1.Cluster, args *CreateMachinepoolUserOptions) (string, error) {
+	cluster *cmv1.Cluster, args *mpOpts.CreateMachinepoolUserOptions) (string, error) {
 
 	privateSubnets, err := r.AWSClient.GetVPCPrivateSubnets(cluster.AWS().SubnetIDs()[0])
 	if err != nil {

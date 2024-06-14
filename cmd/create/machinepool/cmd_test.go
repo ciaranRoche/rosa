@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"go.uber.org/mock/gomock"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
@@ -16,7 +18,6 @@ import (
 	v1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	"github.com/openshift-online/ocm-sdk-go/logging"
 	. "github.com/openshift-online/ocm-sdk-go/testing"
-	"go.uber.org/mock/gomock"
 
 	"github.com/openshift/rosa/pkg/aws"
 	"github.com/openshift/rosa/pkg/ocm"
@@ -34,7 +35,7 @@ const (
 var _ = Describe("Create machine pool", func() {
 	Context("Create machine pool command", func() {
 		format.TruncatedDiff = false
-		
+
 		mockClassicClusterReady := test.MockCluster(func(c *cmv1.ClusterBuilder) {
 			c.AWS(cmv1.NewAWS().SubnetIDs("subnet-0b761d44d3d9a4663", "subnet-0f87f640e56934cbc"))
 			c.Region(cmv1.NewCloudRegion().ID("us-east-1"))
@@ -95,7 +96,7 @@ var _ = Describe("Create machine pool", func() {
 		Context("Classic", func() {
 			It("Creates machine pool successfully with flags", func() {
 				t.ApiServer.AppendHandlers(RespondWithJSON(http.StatusOK, classicClusterReady))
-				t.ApiServer.AppendHandlers(RespondWithJSON(http.StatusOK, ""))				
+				t.ApiServer.AppendHandlers(RespondWithJSON(http.StatusOK, ""))
 				args := NewCreateMachinepoolUserOptions()
 				args.Name = nodePoolName
 				args.Replicas = 3
@@ -190,5 +191,3 @@ func formatResource(resource interface{}) string {
 
 	return outputJson.String()
 }
-
-

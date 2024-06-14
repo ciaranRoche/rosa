@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
+	mpOpts "github.com/openshift/rosa/pkg/options/machinepool"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/rosa/pkg/helper/features"
@@ -112,7 +113,7 @@ var _ = Describe("Machine pool helper", func() {
 
 	Context("getSubnetFromUser", func() {
 		r := &rosa.Runtime{}
-		args := &CreateMachinepoolUserOptions{}
+		args := &mpOpts.CreateMachinepoolUserOptions{}
 		cmd := &cobra.Command{}
 		mockClusterReady := test.MockCluster(func(c *cmv1.ClusterBuilder) {
 			c.AWS(cmv1.NewAWS().SubnetIDs("subnet-0b761d44d3d9a4663", "subnet-0f87f640e56934cbc"))
